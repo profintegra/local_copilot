@@ -1,124 +1,76 @@
 # twinny
+Free and private AI extension for Visual Studio Code.
 
-<br>
-
-Are you fed up of all of those so called "free" Copilot alternatives with paywalls and signups?  Fear not my developer friend!  Twinny is the most no-nonsense locally hosted (or api hosted) AI code completion plugin for Visual Studio Code designed to work seamlessly with [Ollama](https://github.com/jmorganca/ollama) or [llama.cpp](https://github.com/ggerganov/llama.cpp). Like Github Copilot but 100% free and 100% private.
-
-<br>
-
-<div align="center">
-    <p>
-      Install the twinny vscode extension
-    </p>
-    <a href="https://marketplace.visualstudio.com/items?itemName=rjmacarthy.twinny">
-      <img src="https://code.visualstudio.com/assets/images/code-stable.png" height="50" />
-    </a>
-</div>
-
-
-### How twinny helps developers
-
-Fast and accurate code completion:
-
-<img src="https://github.com/rjmacarthy/twinny/assets/5537428/69f567c0-2700-4474-b621-6099255bc87b" width="760"/>
-
-Chat with AI about your code
-
-<img src="https://github.com/rjmacarthy/twinny/assets/5537428/679bd283-28e9-47ff-9165-84dfe293c56a" width="760"/>
-
-#### Other features 
-
-- Free
-- Private
-- Auto code completion
-- Configurable single or multiline completions
-- Fast and accurate
-- Multiple language support
-- Configurable prompt templates
-- Easy to install
-- Configurable endpoint and port and path for completion API
-- Chat feature like Copilot Chat
-- Accept solution directly to editor
-- Copy generated code solution blocks
-- Chat history preserved per conversation
+- [Ollama](https://github.com/jmorganca/ollama)
+- [llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [oobabooga/text-generation-webui](https://github.com/oobabooga/text-generation-webui)
+- [LM Studio](https://github.com/lmstudio-ai)
+- [LiteLLM](https://github.com/BerriAI/litellm)
+- [Open WebUI](https://github.com/open-webui/open-webui)
 
 ## 🚀 Getting Started
+Visit the [quick start guide](https://twinnydotdev.github.io/twinny-docs/general/quick-start/) to get started.
 
-### Easy Installation
+## Main Features
 
-You can install the verified extension at [this link](https://marketplace.visualstudio.com/items?itemName=rjmacarthy.twinny) or find the extension in the extensions section of Visual Studio Code marketplace.
+### Fill in the Middle Code Completion
+Get AI-based suggestions in real time. Let Twinny autocomplete your code as you type.
+![Fill in the Middle Example](https://github.com/rjmacarthy/twinny/assets/5537428/69f567c0-2700-4474-b621-6099255bc87b)
 
-Twinny is configured to use Ollama by deafult. Therefore, when installing the twinny extension in Visual Studio Code, it will automatically prompt and guide you through the installation of Ollama using two default small models `codellama:7b-instruct` for chat and `codellama:7b-code` for "fill in the middle" completions. 
+### Chat with AI About Your Code
+Discuss your code via the sidebar: get function explanations, generate tests, request refactoring, and more.
+<img src="https://github.com/rjmacarthy/twinny/assets/5537428/a5c5bb34-60f6-41f6-8226-c62cf4c17c1d" width="760"/>
 
-If you already have Ollama installed or you want to use llama.cpp instead, you can cancel the automatic setup of Ollama and proceed to update the values inside twinny extension settings to point to your existing models and server.
-
-You can find the settings inside the extension sidebar by clicking the gear icon inside the twinny sidebar or by searching for `twinny` in the extensions search bar.
-
-The main values which need to be updated to switch between Ollama and llama.cpp are:
-
-- `apiUrl` - The url to your Ollama or llama.cpp server (default: localhost)
-- `apiPath` - The API path which defaults to `/api/generate` for Ollama and `/completion` for llama.cpp (See llama.cpp docs or Ollama docs).
-- `apiPort` - The port of your Ollama (default 11434) or llama.cpp server (default 8080)
-
-If you are using llama.cpp - The twinny settings for FIM model name and Chat model name will be ignored, as this should already be configured when running the llama.cpp server.
-
-When the extension is ready you will see a `🤖` icon at the bottom of your code editor.
-
-You will also see which models are being used (only applicable to Ollama hosted servers).
-
-That's it! Enjoy enhanced code completions and chat with twinny! 🎉
-
-## Tested and supported Ollama models
-
-twinny and Ollama have been tested and are working on Linux with a 3090 with the following models:
-
-- codellama `instruct` for chat and `code` for FIM. (https://ollama.ai/library/codellama)
-- phind-codellama for chat (https://ollama.ai/library/phind-codellama)
-- deepseek-coder:6.7b-base-q5_K_M and deepseek-coder:base for FIM
-
-For FIM 
-
-- The model must support the llama special tokens for prefix and suffix if using codellama models.
-- Only use deepseek base models for FIM completions for example `deepseek-coder:base` and `deepseek-coder:6.7b-base-q5_K_M`
-- For stable-code `stable-code:code` has been tested and works for FIM.
-
-For chat 
-
-- All llama models should work, although any model will probably work too, results may vary if the special tokens are different from Llama.
-- Prompt templates will need to be updated if using different models due to special tokens see known issues section.
-
-## Tested and supported llama.cpp models
-
-twinny and llama.ccp has been tested and are working with the following models:
- 
-- https://huggingface.co/TheBloke/CodeLlama-7B-GGUF 
-- https://huggingface.co/TheBloke/CodeLlama-13B-GGUF
-
-## Keyboard shortcuts
-
-| Shortcut                     | Description                              |
-| ---------------------------- | ---------------------------------------- |
-| `ALT+\`                      | Trigger inline code completion           |
-| `CTRL+SHIFT+t`               | Open twinny sidebar                      |
-| `CTRL+SHIFT+/`               | Stop code generation                     | 
-
-
-## Known issues
-
-- There are some issues running this extension on Windows in general 
-- If the server settings are incorrectly set chat and fim completion will not work, if this is the case please open an issue with your error message.
-- Some models may not support the special tokens of llama which means they would not work correctly for FIM completions.
-- Sometimes a restart of vscode is required for new settings to take effect
-- FIM and Chat completions for llama.cpp aren't working if using one api/model endpoint (i.e spit out garbage chat/fim completions), so use two different endpoints (one for chat and another for fim) or use Ollama instead of llama.cpp
-- Using file context often causes incorrect completions for FIM completions because small models get confused when provided with more than one file context.
-- If using stable-code or deekseek for instruct prompt-templates need to be updated.
+### Additional Features
+- Operates online or offline
+- Highly customizable API endpoints for FIM and chat
+- Chat conversations are preserved
+- Conforms to the OpenAI API standard
+- Supports single or multiline fill-in-middle completions
+- Customizable prompt templates
+- Generate git commit messages from staged changes
+- Easy installation via the Visual Studio Code extensions marketplace
+- Customizable settings for API provider, model name, port number, and path
+- Compatible with Ollama, llama.cpp, oobabooga, and LM Studio APIs
+- Accepts code solutions directly in the editor
+- Creates new documents from code blocks
+- Copies generated code solution blocks
+- Workspace embeddings for context-aware AI assistance
+- Connect to the Symmetry network for P2P AI inference
+- Become a provider on the Symmetry network and share your computational resources with the world
   
-If you have a suggestion for improvement please open an issue and I will do my best to make it happen!
+### Workspace Embeddings
+Enhance your coding experience with context-aware AI assistance using workspace embeddings.
+- **Embed Your Workspace**: Easily embed your entire workspace with a single click.
+- **Context-Aware Responses**: twinny uses relevant parts of your codebase to provide more accurate and contextual answers.
+- **Customizable Embedding Provider**: By default, uses Ollama Embedding (all-minilm:latest), but supports various providers.
+- **Adjustable Relevance**: Fine-tune the rerank probability threshold to control the inclusion of context in AI responses.
+- **Toggle Embedded Context**: Easily switch between using embedded context or not for each message.
+
+### Symmetry network
+[Symmetry](https://twinny.dev/symmetry) is a decentralized peer-to-peer network tool designed to democratize access to computational resources for AI inference. Key features include:
+
+- Resource Sharing: Users can offer or seek computational power for various AI tasks.
+- Direct Connections: Enables secure, peer-to-peer connections between users.
+- Visual Studio Code Integration: Twinny has built-in functionality to connect as a peer or provider directly within VS Code.
+- Public Provider Access: Users can leverage models from other users who are public providers on the Symmetry network.
+
+Symmetry aims to make AI inference more accessible and efficient for developers and researchers.
+
+The client source code is open source and can be found [here](https://github.com/twinnydotdev/symmetry-core).
+
+## Known Issues
+Visit the GitHub [issues page](https://github.com/rjmacarthy/twinny/issues) for known problems and troubleshooting.
 
 ## Contributing
+Interested in contributing? Reach out on [Twitter](https://x.com/twinnydotdev), describe your changes in an issue, and submit a PR when ready. Twinny is open-source under the MIT license. See the [LICENSE](https://github.com/rjmacarthy/twinny/blob/master/LICENSE) for more details.
 
-We are actively looking for contributors who want to help improve the project, if you are interested in helping out please reach out on [twitter](https://x.com/rjmacarthy).
+## Support Twinny
+Thanks for using Twinny! 
+This project is and will always be free and open source. If you find it helpful, please consider showing your appreciation with a small donation <3
+Bitcoin: `1PVavNkMmBmUz8nRYdnVXiTgXrAyaxfehj`
 
-Contributions are welcome please open an issue describing your changes and open a pull request when ready.
+Follow my journey on X for updates! https://x.com/rjmacarthy
 
-This project is under MIT licence, please read the [LICENSE](https://github.com/rjmacarthy/twinny/blob/master/LICENSE) file for more information.
+## Disclaimer
+Twinny is actively developed and provided "as is". Functionality may vary between updates.

@@ -1,136 +1,186 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   VSCodeButton,
-  VSCodeTextArea,
   VSCodePanelView,
-  VSCodeProgressRing,
-  VSCodeBadge
+  VSCodeBadge,
+  VSCodeDivider
 } from '@vscode/webview-ui-toolkit/react'
-
-import { Selection } from './selection'
-import { BOT_NAME, MESSAGE_KEY, MESSAGE_NAME, USER_NAME } from '../constants'
+import { useEditor, EditorContent, Editor, JSONContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Placeholder from '@tiptap/extension-placeholder'
+import Mention from '@tiptap/extension-mention'
 
 import {
-  useLanguage,
+  ASSISTANT,
+  WORKSPACE_STORAGE_KEY,
+  EVENT_NAME,
+  USER,
+  SYMMETRY_EMITTER_KEY,
+  EXTENSION_CONTEXT_NAME
+} from '../common/constants'
+
+import useAutosizeTextArea, {
+  useConversationHistory,
   useSelection,
+  useSuggestion,
+  useSymmetryConnection,
   useTheme,
   useWorkSpaceContext
 } from './hooks'
 import {
-  CodeIcon,
   DisabledAutoScrollIcon,
+  DisabledRAGIcon,
   EnabledAutoScrollIcon,
-  StopIcon
+  EnabledRAGIcon
 } from './icons'
 
 import { Suggestions } from './suggestions'
-import { ClientMessage, MessageType, ServerMessage } from '../types'
+import {
+  ClientMessage,
+  MentionType,
+  Message as MessageType,
+  ServerMessage
+} from '../common/types'
 import { Message } from './message'
-import { getCompletionContent } from './utils'
-import styles from './index.module.css'
+import { CustomKeyMap, getCompletionContent } from './utils'
+import { ProviderSelect } from './provider-select'
+import { EmbeddingOptions } from './embedding-options'
+import ChatLoader from './loader'
+import styles from './styles/index.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const global = globalThis as any
 export const Chat = () => {
-  const [inputText, setInputText] = useState('')
-  const [isSelectionVisible, setIsSelectionVisible] = useState<boolean>(false)
-  const genertingRef = useRef(false)
+  const generatingRef = useRef(false)
+  const editorRef = useRef<Editor | null>(null)
   const stopRef = useRef(false)
   const theme = useTheme()
-  const language = useLanguage()
-  const [loading, setLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [messages, setMessages] = useState<MessageType[] | undefined>()
   const [completion, setCompletion] = useState<MessageType | null>()
-  const divRef = useRef<HTMLDivElement>(null)
-  const autoScrollContext = useWorkSpaceContext<boolean>(MESSAGE_KEY.autoScroll)
-  const [isAutoScrolledEnabled, setIsAutoScrolledEnabled] = useState<
-    boolean | undefined
-  >(autoScrollContext)
-  const lastConversation = useWorkSpaceContext<MessageType[]>(
-    MESSAGE_KEY.lastConversation
-  )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const chatRef = useRef<any>(null) // TODO: type...
+  const markdownRef = useRef<HTMLDivElement>(null)
+  const { symmetryConnection } = useSymmetryConnection()
 
-  const scrollBottom = () => {
+  const { context: autoScrollContext, setContext: setAutoScrollContext } =
+    useWorkSpaceContext<boolean>(WORKSPACE_STORAGE_KEY.autoScroll)
+  const { context: showProvidersContext, setContext: setShowProvidersContext } =
+    useWorkSpaceContext<boolean>(WORKSPACE_STORAGE_KEY.showProviders)
+  const {
+    context: showEmbeddingOptionsContext,
+    setContext: setShowEmbeddingOptionsContext
+  } = useWorkSpaceContext<boolean>(WORKSPACE_STORAGE_KEY.showEmbeddingOptions)
+  const { conversation, saveLastConversation, setActiveConversation } =
+    useConversationHistory()
+
+  const { context: enableRagContext, setContext: setEnableRagContext } =
+    useWorkSpaceContext<boolean>(EXTENSION_CONTEXT_NAME.twinnyEnableRag)
+
+  const chatRef = useRef<HTMLTextAreaElement>(null)
+
+  const scrollToBottom = () => {
+    if (!autoScrollContext) return
     setTimeout(() => {
-      if (divRef.current) {
-        divRef.current.scrollTop = divRef.current.scrollHeight
+      if (markdownRef.current) {
+        markdownRef.current.scrollTop = markdownRef.current.scrollHeight
       }
     }, 200)
   }
 
-  const selection = useSelection(scrollBottom)
+  const selection = useSelection(scrollToBottom)
 
   const handleCompletionEnd = (message: ServerMessage) => {
-    setMessages((prev) => {
-      const update = [
-        ...(prev || []),
-        {
-          role: BOT_NAME,
-          content: getCompletionContent(message),
-          type: message.value.type,
-          language: message.value.data
+    if (message.value) {
+      setMessages((prev) => {
+        const messages = [
+          ...(prev || []),
+          {
+            role: ASSISTANT,
+            content: getCompletionContent(message)
+          }
+        ]
+
+        if (message.value.type === SYMMETRY_EMITTER_KEY.conversationTitle) {
+          return messages
         }
-      ]
-      global.vscode.postMessage({
-        type: MESSAGE_NAME.twinnySetWorkspaceContext,
-        key: MESSAGE_KEY.lastConversation,
-        data: update
-      } as ClientMessage<MessageType[]>)
-      return update
-    })
+
+        saveLastConversation({
+          ...conversation,
+          messages: messages
+        })
+        return messages
+      })
+      setTimeout(() => {
+        editorRef.current?.commands.focus()
+        stopRef.current = false
+      }, 200)
+    }
     setCompletion(null)
-    setLoading(false)
-    genertingRef.current = false
-    setTimeout(() => {
-      chatRef.current?.focus()
-      stopRef.current = false
-    }, 1000)
+    setIsLoading(false)
+    generatingRef.current = false
+  }
+
+  const handleAddTemplateMessage = (message: ServerMessage) => {
+    if (stopRef.current) {
+      generatingRef.current = false
+      return
+    }
+    generatingRef.current = true
+    setIsLoading(false)
+    scrollToBottom()
+    setMessages((prev) => [
+      ...(prev || []),
+      {
+        role: USER,
+        content: message.value.completion as string
+      }
+    ])
   }
 
   const handleCompletionMessage = (message: ServerMessage) => {
     if (stopRef.current) {
-      genertingRef.current = false
+      generatingRef.current = false
       return
     }
-    genertingRef.current = true
-    setLoading(false)
-    if (isAutoScrolledEnabled) scrollBottom()
+    generatingRef.current = true
     setCompletion({
-      role: BOT_NAME,
-      content: getCompletionContent(message),
-      type: message.value.type,
-      language: message.value.data,
-      error: message.value.error
+      role: ASSISTANT,
+      content: getCompletionContent(message)
     })
+    scrollToBottom()
   }
 
   const handleLoadingMessage = () => {
-    setLoading(true)
-    if (isAutoScrolledEnabled) scrollBottom()
+    setIsLoading(true)
+    if (autoScrollContext) scrollToBottom()
   }
 
   const messageEventHandler = (event: MessageEvent) => {
     const message: ServerMessage = event.data
     switch (message.type) {
-      case MESSAGE_NAME.twinnyOnCompletion: {
+      case EVENT_NAME.twinngAddMessage: {
+        handleAddTemplateMessage(message)
+        break
+      }
+      case EVENT_NAME.twinnyOnCompletion: {
         handleCompletionMessage(message)
         break
       }
-      case MESSAGE_NAME.twinnyOnLoading: {
+      case EVENT_NAME.twinnyOnLoading: {
         handleLoadingMessage()
         break
       }
-      case MESSAGE_NAME.twinnyOnEnd: {
+      case EVENT_NAME.twinnyOnEnd: {
         handleCompletionEnd(message)
         break
       }
-      case MESSAGE_NAME.twinnyStopGeneration: {
+      case EVENT_NAME.twinnyStopGeneration: {
         setCompletion(null)
-        genertingRef.current = false
+        generatingRef.current = false
+        setIsLoading(false)
         chatRef.current?.focus()
+        setActiveConversation(undefined)
+        setMessages([])
         setTimeout(() => {
           stopRef.current = false
         }, 1000)
@@ -140,170 +190,400 @@ export const Chat = () => {
 
   const handleStopGeneration = () => {
     stopRef.current = true
-    genertingRef.current = false
+    generatingRef.current = false
     global.vscode.postMessage({
-      type: MESSAGE_NAME.twinnyStopGeneration
+      type: EVENT_NAME.twinnyStopGeneration
     } as ClientMessage)
-    handleCompletionEnd({
-      type: MESSAGE_KEY.chatMessage,
-      value: {
-        completion: completion?.content || '',
-        type: MESSAGE_KEY.chatMessage
-      }
+    setCompletion(null)
+    setIsLoading(false)
+    generatingRef.current = false
+    setTimeout(() => {
+      chatRef.current?.focus()
+      stopRef.current = false
+    }, 200)
+  }
+
+  const handleRegenerateMessage = (index: number): void => {
+    setIsLoading(true)
+    setMessages((prev) => {
+      if (!prev) return prev
+      const updatedMessages = prev.slice(0, index)
+
+      global.vscode.postMessage({
+        type: EVENT_NAME.twinnyChatMessage,
+        data: updatedMessages
+      } as ClientMessage)
+
+      return updatedMessages
     })
   }
 
-  const handleSubmitForm = (input: string) => {
-    if (input) {
-      setInputText('')
+  const handleDeleteMessage = (index: number): void => {
+    setMessages((prev) => {
+      if (!prev || prev.length === 0) return prev
+
+      if (prev.length === 2) return prev
+
+      const updatedMessages = [
+        ...prev.slice(0, index),
+        ...prev.slice(index + 2)
+      ]
+
+      saveLastConversation({
+        ...conversation,
+        messages: updatedMessages
+      })
+
+      return updatedMessages
+    })
+  }
+
+  const handleEditMessage = (message: string, index: number): void => {
+    setIsLoading(true)
+    setMessages((prev) => {
+      if (!prev) return prev
+
+      const updatedMessages = [
+        ...prev.slice(0, index),
+        { ...prev[index], content: message }
+      ]
+
       global.vscode.postMessage({
-        type: MESSAGE_NAME.twinnyChatMessage,
-        data: [
-          ...(messages || []),
-          {
-            role: USER_NAME,
-            content: input
-          }
-        ]
+        type: EVENT_NAME.twinnyChatMessage,
+        data: updatedMessages
       } as ClientMessage)
-      setMessages((prev) => [
-        ...(prev || []),
-        { role: USER_NAME, content: input, type: '' }
-      ])
-      if (isAutoScrolledEnabled) scrollBottom()
+
+      return updatedMessages
+    })
+  }
+
+  const getMentions = () => {
+    const mentions: MentionType[] = []
+    editorRef.current?.getJSON().content?.forEach((node) => {
+      if (node.type === 'paragraph' && Array.isArray(node.content)) {
+        node.content.forEach((innerNode: JSONContent) => {
+          if (innerNode.type === 'mention' && innerNode.attrs) {
+            mentions.push({
+              name:
+                innerNode.attrs.label ||
+                innerNode.attrs.id.split('/').pop() ||
+                '',
+              path: innerNode.attrs.id
+            })
+          }
+        })
+      }
+    })
+
+    return mentions
+  }
+
+  const replaceMentionsInText = useCallback(
+    (text: string, mentions: MentionType[]): string => {
+      return mentions.reduce(
+        (result, mention) => result.replace(mention.path, `@${mention.name}`),
+        text
+      )
+    },
+    []
+  )
+
+  const handleSubmitForm = () => {
+    const input = editorRef.current?.getText().trim()
+    if (input && editorRef.current) {
+      const mentions = getMentions()
+
+      setIsLoading(true)
+      clearEditor()
+      setMessages((prevMessages) => {
+        const updatedMessages = [
+          ...(prevMessages || []),
+          { role: USER, content: replaceMentionsInText(input, mentions) }
+        ]
+
+        const clientMessage: ClientMessage<MessageType[], MentionType[]> = {
+          type: EVENT_NAME.twinnyChatMessage,
+          data: updatedMessages,
+          meta: mentions
+        }
+
+        global.vscode.postMessage(clientMessage)
+        return updatedMessages
+      })
+
+      setTimeout(() => {
+        if (markdownRef.current) {
+          markdownRef.current.scrollTop = markdownRef.current.scrollHeight
+        }
+      }, 200)
     }
   }
 
-  const togggleAutoScroll = () => {
-    setIsAutoScrolledEnabled((prev) => {
+  const clearEditor = useCallback(() => {
+    editorRef.current?.commands.clearContent()
+  }, [])
+
+  const handleToggleAutoScroll = () => {
+    setAutoScrollContext((prev) => {
       global.vscode.postMessage({
-        type: MESSAGE_NAME.twinnySetWorkspaceContext,
-        key: MESSAGE_KEY.autoScroll,
+        type: EVENT_NAME.twinnySetWorkspaceContext,
+        key: WORKSPACE_STORAGE_KEY.autoScroll,
         data: !prev
       } as ClientMessage)
 
-      if (!prev) scrollBottom()
+      if (!prev) scrollToBottom()
 
       return !prev
     })
   }
 
-  const handleToggleSelection = () => {
-    setIsSelectionVisible((prev) => !prev)
+  const handleToggleProviderSelection = () => {
+    setShowProvidersContext((prev) => {
+      global.vscode.postMessage({
+        type: EVENT_NAME.twinnySetWorkspaceContext,
+        key: WORKSPACE_STORAGE_KEY.showProviders,
+        data: !prev
+      } as ClientMessage)
+      return !prev
+    })
+  }
+
+  const handleToggleEmbeddingOptions = () => {
+    setShowEmbeddingOptionsContext((prev) => {
+      global.vscode.postMessage({
+        type: EVENT_NAME.twinnySetWorkspaceContext,
+        key: WORKSPACE_STORAGE_KEY.showEmbeddingOptions,
+        data: !prev
+      } as ClientMessage)
+      return !prev
+    })
+  }
+
+  const handleGetGitChanges = () => {
+    global.vscode.postMessage({
+      type: EVENT_NAME.twinnyGetGitChanges
+    } as ClientMessage)
+  }
+
+  const handleScrollBottom = () => {
+    if (markdownRef.current) {
+      markdownRef.current.scrollTop = markdownRef.current.scrollHeight
+    }
+  }
+
+  const handleToggleRag = (): void => {
+    setEnableRagContext((prev) => {
+      global.vscode.postMessage({
+        type: EVENT_NAME.twinnySetWorkspaceContext,
+        key: EXTENSION_CONTEXT_NAME.twinnyEnableRag,
+        data: !prev
+      } as ClientMessage)
+      return !prev
+    })
   }
 
   useEffect(() => {
     window.addEventListener('message', messageEventHandler)
-    chatRef.current?.focus()
+    editorRef.current?.commands.focus()
+    scrollToBottom()
     return () => {
       window.removeEventListener('message', messageEventHandler)
     }
-  }, [isAutoScrolledEnabled])
+  }, [autoScrollContext])
 
   useEffect(() => {
-    if (autoScrollContext !== undefined)
-      setIsAutoScrolledEnabled(autoScrollContext)
-
-    if (lastConversation?.length) {
-      return setMessages(lastConversation)
+    if (conversation?.messages?.length) {
+      return setMessages(conversation.messages)
     }
-    setMessages([])
-  }, [lastConversation, autoScrollContext])
+  }, [conversation?.id, autoScrollContext, showProvidersContext])
+
+  const { suggestion, filePaths } = useSuggestion()
+
+  const memoizedSuggestion = useMemo(() => suggestion, [JSON.stringify(filePaths)])
+
+  const editor = useEditor(
+    {
+      extensions: [
+        StarterKit,
+        Mention.configure({
+          HTMLAttributes: {
+            class: 'mention'
+          },
+          suggestion: memoizedSuggestion,
+          renderText({ node }) {
+            if (node.attrs.name) {
+              return `${node.attrs.name ?? node.attrs.id}`
+            }
+            return node.attrs.id ?? ''
+          }
+        }),
+        CustomKeyMap.configure({
+          handleSubmitForm,
+          clearEditor
+        }),
+        Placeholder.configure({
+          placeholder: 'How can twinny help you today?'
+        }),
+      ]
+    },
+    [memoizedSuggestion]
+  )
+
+  useAutosizeTextArea(chatRef, editorRef.current?.getText() || '')
+
+  useEffect(() => {
+    if (editor) editorRef.current = editor
+    editorRef.current?.commands.focus()
+  }, [editor])
+
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.extensionManager.extensions.forEach((extension) => {
+        if (extension.name === 'mention') {
+          extension.options.suggestion = memoizedSuggestion
+        }
+      })
+    }
+  }, [memoizedSuggestion])
 
   return (
     <VSCodePanelView>
       <div className={styles.container}>
-        <div className={styles.markdown} ref={divRef}>
+        <h4 className={styles.title}>
+          {conversation?.title
+            ? conversation?.title
+            : generatingRef.current && <span>New conversation</span>}
+        </h4>
+        <div className={styles.markdown} ref={markdownRef}>
           {messages?.map((message, index) => (
-            <div key={`message-${index}`}>
-              <Message message={message} theme={theme} />
-            </div>
+            <Message
+              key={index}
+              onRegenerate={handleRegenerateMessage}
+              onUpdate={handleEditMessage}
+              onDelete={handleDeleteMessage}
+              isLoading={isLoading || generatingRef.current}
+              isAssistant={index % 2 !== 0}
+              conversationLength={messages?.length}
+              message={message}
+              theme={theme}
+              index={index}
+            />
           ))}
-          {loading && (
-            <div className={styles.loading}>
-              <VSCodeProgressRing aria-label="Loading"></VSCodeProgressRing>
-            </div>
-          )}
+          {isLoading && !generatingRef.current && <ChatLoader />}
           {!!completion && (
-            <>
-              <Message
-                theme={theme}
-                message={{
-                  ...completion,
-                  role: BOT_NAME
-                }}
-              />
-            </>
+            <Message
+              isLoading={false}
+              isAssistant
+              theme={theme}
+              message={{
+                ...completion,
+                role: ASSISTANT
+              }}
+            />
           )}
         </div>
         {!!selection.length && (
-          <Suggestions isDisabled={!!genertingRef.current} />
+          <Suggestions isDisabled={!!generatingRef.current} />
         )}
-        <Selection
-          isVisible={isSelectionVisible}
-          onSelect={scrollBottom}
-          language={language}
-        />
+        {showProvidersContext && !symmetryConnection && <ProviderSelect />}
+        {showProvidersContext && showEmbeddingOptionsContext && (
+          <VSCodeDivider />
+        )}
+        {showEmbeddingOptionsContext && !symmetryConnection && (
+          <EmbeddingOptions />
+        )}
         <div className={styles.chatOptions}>
-          <VSCodeButton
-            onClick={togggleAutoScroll}
-            title="Toggle auto scroll on/off"
-            appearance="icon"
-          >
-            {isAutoScrolledEnabled ? (
-              <EnabledAutoScrollIcon />
-            ) : (
-              <DisabledAutoScrollIcon />
-            )}
-          </VSCodeButton>
-          <VSCodeButton
-            title="Toggle selection preview"
-            appearance="icon"
-            onClick={handleToggleSelection}
-          >
-            <CodeIcon />
-          </VSCodeButton>
-          <VSCodeBadge>Selected characters: {selection?.length}</VSCodeBadge>
-        </div>
-        <form>
-          <div className={styles.chatbox}>
-            <VSCodeTextArea
-              ref={chatRef}
-              disabled={genertingRef.current}
-              placeholder="Message twinny"
-              rows={5}
-              value={inputText}
-              onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-                if (e.ctrlKey && e.key === 'Enter') {
-                  const target = e.target as HTMLTextAreaElement
-                  handleSubmitForm(target.value)
-                }
-              }}
-              onChange={(e) => {
-                const event =
-                  e as unknown as React.ChangeEvent<HTMLTextAreaElement>
-                setInputText(event.target.value)
-              }}
-            />
+          <div>
+            <VSCodeButton
+              onClick={handleToggleAutoScroll}
+              title="Toggle auto scroll on/off"
+              appearance="icon"
+            >
+              {autoScrollContext ? (
+                <EnabledAutoScrollIcon />
+              ) : (
+                <DisabledAutoScrollIcon />
+              )}
+            </VSCodeButton>
+            <VSCodeButton
+              onClick={handleGetGitChanges}
+              title="Generate commit message from staged changes"
+              appearance="icon"
+            >
+              <span className="codicon codicon-git-pull-request"></span>
+            </VSCodeButton>
+            <VSCodeButton
+              title="Scroll down to the bottom"
+              appearance="icon"
+              onClick={handleScrollBottom}
+            >
+              <span className="codicon codicon-arrow-down"></span>
+            </VSCodeButton>
+            <VSCodeButton
+              title="Enable/disable RAG context for all messages"
+              appearance="icon"
+              onClick={handleToggleRag}
+            >
+              {enableRagContext ? <EnabledRAGIcon /> : <DisabledRAGIcon />}
+            </VSCodeButton>
+            <VSCodeBadge>{selection?.length}</VSCodeBadge>
           </div>
-          <div className={styles.send}>
-            {genertingRef.current && (
+          <div>
+            {generatingRef.current && (
               <VSCodeButton
                 type="button"
                 appearance="icon"
                 onClick={handleStopGeneration}
                 aria-label="Stop generation"
               >
-                <StopIcon />
+                <span className="codicon codicon-debug-stop"></span>
               </VSCodeButton>
             )}
-            <VSCodeButton
-              disabled={genertingRef.current}
-              onClick={() => handleSubmitForm(inputText)}
-              appearance="primary"
+            {!symmetryConnection && (
+              <>
+                <VSCodeButton
+                  title="Embedding options"
+                  appearance="icon"
+                  onClick={handleToggleEmbeddingOptions}
+                >
+                  <span className="codicon codicon-database"></span>
+                </VSCodeButton>
+                <VSCodeButton
+                  title="Select active providers"
+                  appearance="icon"
+                  onClick={handleToggleProviderSelection}
+                >
+                  <span className="codicon codicon-keyboard"></span>
+                </VSCodeButton>
+              </>
+            )}
+            {!!symmetryConnection && (
+              <a
+                href={`https://twinny.dev/symmetry/?id=${symmetryConnection.id}`}
+              >
+                <VSCodeBadge
+                  title={`Connected to symmetry network provider ${symmetryConnection?.name}, model ${symmetryConnection?.modelName}, provider ${symmetryConnection?.provider}`}
+                >
+                  ⚡️ {symmetryConnection?.name}
+                </VSCodeBadge>
+              </a>
+            )}
+          </div>
+        </div>
+        <form>
+          <div className={styles.chatBox}>
+            <EditorContent
+              placeholder="How can twinny help you today?"
+              className={styles.tiptap}
+              editor={editorRef.current}
+            />
+            <div
+              role="button"
+              onClick={handleSubmitForm}
+              className={styles.chatSubmit}
             >
-              Send message
-            </VSCodeButton>
+              <span className="codicon codicon-send"></span>
+            </div>
           </div>
         </form>
       </div>
